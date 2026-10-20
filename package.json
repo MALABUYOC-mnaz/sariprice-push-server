@@ -13,5 +13,8 @@
   "dependencies": {
     "express": "^5.3.0",
     "firebase-admin": "10.3.0"
+  },
+  "overrides": {
+    "node-fetch": "2.6.7"
   }
 }
