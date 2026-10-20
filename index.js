@@ -1,17 +1,21 @@
-const admin = require('firebase-admin');
+const { initializeApp, cert } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
+const { getMessaging } = require('firebase-admin/messaging');
 const express = require('express');
 
 // ✅ PRODUCTION (Render): load from env var
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
-// ✅ TESTING: load from file
+// ✅ TESTING: load from file (i-comment out kapag deployed)
 // const serviceAccount = require('./service-account.json');
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
+// ✅ Bagong paraan ng initialization
+initializeApp({
+  credential: cert(serviceAccount),
 });
 
-const db = admin.firestore();
+const db = getFirestore();
+const messaging = getMessaging();
 
 // ═══════════════════════════════════════════════════════════════
 // ✅ PANGGAMOT SA FLOODING
@@ -50,7 +54,8 @@ async function sendToAll(tokens, title, body, data = {}) {
   };
 
   try {
-    const response = await admin.messaging().sendEachForMulticast(message);
+    // ✅ Bagong paraan ng pag-send
+    const response = await messaging.sendEachForMulticast(message);
     console.log(`${response.successCount} sent, ${response.failureCount} failed`);
 
     response.responses.forEach((resp, idx) => {
@@ -75,7 +80,6 @@ db.collection('products').onSnapshot((snapshot) => {
       const productName = product.product_name || 'Bagong produkto';
       const createdAt = product.created_at?.toDate?.() || new Date();
 
-      // ✅ PAGGAMIT NG SERVER_START_TIME
       const isNewSinceStartup = createdAt.getTime() >= SERVER_START_TIME;
       const ageSeconds = (Date.now() - createdAt.getTime()) / 1000;
 
@@ -95,7 +99,7 @@ db.collection('products').onSnapshot((snapshot) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// LISTENER 2: Price Updates (May Increase/Decrease Alert)
+// LISTENER 2: Price Updates
 // ═══════════════════════════════════════════════════════════════
 console.log('Nakikinig sa price_history collection...');
 
@@ -108,7 +112,6 @@ db.collection('price_history').onSnapshot((snapshot) => {
 
       if (oldPrice === newPrice) return;
 
-      // ✅ PAGGAMIT NG SERVER_START_TIME
       const changedAt = data.changed_at?.toDate?.() || new Date();
       const isNewSinceStartup = changedAt.getTime() >= SERVER_START_TIME;
       if (!isNewSinceStartup) return;
@@ -126,7 +129,7 @@ db.collection('price_history').onSnapshot((snapshot) => {
       await sendToAll(
         tokens,
         title,
-        `${productName}: ₱${oldPrice} → ₱${newPrice}`, // ✅ Inayos ko yung text
+        `${productName}: ₱${oldPrice} → ₱${newPrice}`,
         { type: 'price_update', productId: productId }
       );
     }
@@ -134,7 +137,7 @@ db.collection('price_history').onSnapshot((snapshot) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// LISTENER 3: New Bundle Options (mula sa prices collection)
+// LISTENER 3: New Bundle Options
 // ═══════════════════════════════════════════════════════════════
 console.log('Nakikinig sa bundles sa prices collection...');
 
@@ -148,7 +151,6 @@ db.collection('prices').onSnapshot((snapshot) => {
       
       if (rawOpts && Array.isArray(rawOpts) && rawOpts.length > 0) {
         
-        // ✅ PAGGAMIT NG SERVER_START_TIME
         const updatedAt = priceData['updated_at']?.toDate?.() || new Date();
         const isNewSinceStartup = updatedAt.getTime() >= SERVER_START_TIME;
         
@@ -172,7 +174,7 @@ db.collection('prices').onSnapshot((snapshot) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// HEALTH CHECK ENDPOINT (para sa Render)
+// HEALTH CHECK ENDPOINT
 // ═══════════════════════════════════════════════════════════════
 const app = express();
 app.get('/', (req, res) => res.send('SariPrice Push Server running!'));
