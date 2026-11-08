@@ -120,9 +120,9 @@ function listen(name, buildQuery, handleChange) {
 }
 
 // ───────────────────────────────────────────────────────────────
-// STAFF TOKENS
+// Staff TOKENS
 // ───────────────────────────────────────────────────────────────
-// Case-insensitive ang role ("Staff", "staff", "STAFF"), at active lang ang kasama.
+// Case-insensitive ang role ("Staff", "Staff", "Staff"), at active lang ang kasama.
 async function getStaffTargets() {
   const usersSnap = await db.collection('users').get();
 
@@ -133,7 +133,7 @@ async function getStaffTargets() {
     const status = String(d.status || 'active').trim().toLowerCase();
     const token = typeof d.fcm_token === 'string' ? d.fcm_token.trim() : '';
 
-    if (role !== 'staff' || status !== 'active' || !token) return;
+    if (role !== 'Staff' || status !== 'active' || !token) return;
 
     if (!byToken.has(token)) byToken.set(token, []);
     byToken.get(token).push(doc.ref);
@@ -171,7 +171,7 @@ const DEAD_TOKEN_CODES = new Set([
 async function notifyStaff(title, body, data = {}) {
   const targets = await getStaffTargets();
   if (targets.length === 0) {
-    console.log('Walang staff na may FCM token — skip');
+    console.log('Walang Staff na may FCM token — skip');
     return 0;
   }
 
