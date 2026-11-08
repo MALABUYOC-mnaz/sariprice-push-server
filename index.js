@@ -9,6 +9,9 @@
 //   CATCHUP_MINUTES           (optional, default 180) — hanggang ilang minuto pabalik
 //                             ang hahabulin na events kapag nag-restart/nag-wake ang server
 //   KEEP_ALIVE_MINUTES        (optional, default 10)
+//
+// ⚠️ Dapat tugma ang mga constants sa ibaba (ANDROID_CHANNEL_ID, NOTIF_TYPE,
+//    FCM data keys) sa push_notification_service.dart ng app.
 // ═══════════════════════════════════════════════════════════════
 
 const { initializeApp, cert } = require('firebase-admin/app');
@@ -23,6 +26,16 @@ const CATCHUP_MINUTES = Number(process.env.CATCHUP_MINUTES) || 180;
 const KEEP_ALIVE_MINUTES = Number(process.env.KEEP_ALIVE_MINUTES) || 10;
 const SELF_URL = process.env.SELF_URL || process.env.RENDER_EXTERNAL_URL || '';
 const LOG_TTL_DAYS = 30; // gaano katagal itatabi ang push_log (para sa dedupe)
+
+// ✅ Tugma sa Flutter app (PushNotificationService)
+const STAFF_ROLE = 'staff'; // lowercase dahil lowercase rin ang nilalagay sa `role` sa ibaba
+const ANDROID_CHANNEL_ID = 'sariprice_channel';
+const NOTIF_TYPE = {
+  NEW_PRODUCT: 'new_product',
+  PRICE_UPDATE: 'price_update',
+  NEW_BUNDLE: 'new_bundle',
+  BUNDLE_PRICE: 'bundle_price',
+};
 
 // ───────────────────────────────────────────────────────────────
 // FIREBASE INIT
@@ -120,9 +133,11 @@ function listen(name, buildQuery, handleChange) {
 }
 
 // ───────────────────────────────────────────────────────────────
-// Staff TOKENS
+// STAFF TOKENS
 // ───────────────────────────────────────────────────────────────
-// Case-insensitive ang role ("Staff", "Staff", "Staff"), at active lang ang kasama.
+// Case-insensitive ang role ("Staff", "staff", "STAFF"), at active lang ang kasama.
+// Mga field na binabasa sa `users`: role, status, fcm_token
+// (ang `fcm_token` ay sinusulat ng app sa PushNotificationService._saveToken)
 async function getStaffTargets() {
   const usersSnap = await db.collection('users').get();
 
@@ -133,7 +148,7 @@ async function getStaffTargets() {
     const status = String(d.status || 'active').trim().toLowerCase();
     const token = typeof d.fcm_token === 'string' ? d.fcm_token.trim() : '';
 
-    if (role !== 'Staff' || status !== 'active' || !token) return;
+    if (role !== STAFF_ROLE || status !== 'active' || !token) return;
 
     if (!byToken.has(token)) byToken.set(token, []);
     byToken.get(token).push(doc.ref);
@@ -189,8 +204,13 @@ async function notifyStaff(title, body, data = {}) {
       tokens: chunk.map((t) => t.token),
       notification: { title, body },
       data: stringData,
-      // High priority para dumating agad kahit naka-Doze/background ang phone
-      android: { priority: 'high', notification: { sound: 'default' } },
+      // High priority para dumating agad kahit naka-Doze/background ang phone.
+      // channelId ay dapat tugma sa channel na ginagawa ng app, para gamitin
+      // ang importance/sound settings nito kapag background o killed ang app.
+      android: {
+        priority: 'high',
+        notification: { sound: 'default', channelId: ANDROID_CHANNEL_ID },
+      },
       apns: {
         headers: { 'apns-priority': '10' },
         payload: { aps: { sound: 'default' } },
@@ -266,6 +286,7 @@ async function getProductName(productId, fallback = 'Produkto') {
 // LISTENER 1: Bagong product
 // Pinakikinggan lang ang products na ginawa sa loob ng CATCHUP window,
 // kaya hindi binabasa ang buong collection at walang flood kapag nag-restart.
+// Fields: products.created_at, products.product_name
 // ═══════════════════════════════════════════════════════════════
 listen(
   'products',
@@ -280,13 +301,14 @@ listen(
       `product_${change.doc.id}`,
       'New Product Available!',
       `A new ${productName} has been added to the shelf. Check it in SariPrice now!`,
-      { type: 'new_product', productId: change.doc.id }
+      { type: NOTIF_TYPE.NEW_PRODUCT, productId: change.doc.id }
     );
   }
 );
 
 // ═══════════════════════════════════════════════════════════════
 // LISTENER 2: Price Updates
+// Fields: price_history.changed_at, old_price, new_price, product_id
 // ═══════════════════════════════════════════════════════════════
 listen(
   'price_history',
@@ -312,7 +334,7 @@ listen(
       `price_${change.doc.id}`,
       title,
       `${productName}: ₱${oldPrice.toFixed(2)} → ₱${newPrice.toFixed(2)}`,
-      { type: 'price_update', productId: productId || '' }
+      { type: NOTIF_TYPE.PRICE_UPDATE, productId: productId || '' }
     );
   }
 );
@@ -324,6 +346,7 @@ listen(
 // - Unang beses na makita ang product → baseline lang (hindi mag-notify)
 // - Nagbago ang bundles → mag-notify
 // - Presyo lang ng product ang nagbago → walang notification
+// Fields: prices/{productId}.pricing_options (o .bundles) — [{quantity|qty|pieces, price|bundle_price}]
 // ═══════════════════════════════════════════════════════════════
 function normalizeBundles(priceData) {
   const raw = priceData.pricing_options || priceData.bundles;
@@ -410,7 +433,7 @@ listen(
         `A new bundle option has been added for ${productName}: ${added
           .map(describeBundle)
           .join(', ')}. Check SariPrice for the available quantities and bundle prices.`,
-        { type: 'new_bundle', productId }
+        { type: NOTIF_TYPE.NEW_BUNDLE, productId }
       );
     } else {
       console.log(`Nagbago ang presyo ng bundle ng: ${productName}`);
@@ -419,7 +442,7 @@ listen(
         `The bundle price for ${productName} has changed: ${repriced
           .map(describeBundle)
           .join(', ')}.`,
-        { type: 'bundle_price', productId }
+        { type: NOTIF_TYPE.BUNDLE_PRICE, productId }
       );
     }
   }
