@@ -173,11 +173,20 @@ db.collection('prices').onSnapshot((snapshot) => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════
 // HEALTH CHECK ENDPOINT
-// ═══════════════════════════════════════════════════════════════
 const app = express();
-app.get('/', (req, res) => res.send('SariPrice Push Server running!'));
-app.listen(process.env.PORT || 3000, () => {
-  console.log('Server started');
+
+app.get('/', (req, res) => {
+  res.status(200).send('SariPrice Push Server running!');
+});
+
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    server: 'SariPrice Push Server'
+  });
+});
+
+app.listen(process.env.PORT || 3000, '0.0.0.0', () => {
+  console.log(`Server started on port ${process.env.PORT || 3000}`);
 });
